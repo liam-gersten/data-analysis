@@ -1,0 +1,287 @@
+---
+title: "Predicting Civil Case Payouts to Plaintiff"
+author:
+- Liam Gersten
+- lgersten
+date: "Saturday, March 24 2021"
+output:
+  pdf_document:
+    toc: yes
+  word_document:
+    toc: yes
+  html_document:
+    code_folding: show
+    theme: cosmo
+    toc: yes
+    toc_float: yes
+optin: TRUE
+---
+
+```{r, include=FALSE}
+###########################
+# STYLE EDITS: IGNORE THIS
+###########################
+knitr::opts_chunk$set(message = FALSE) # include this if you don't want markdown to knit messages
+knitr::opts_chunk$set(warning = FALSE) # include this if you don't want markdown to knit warnings
+knitr::opts_chunk$set(echo = TRUE) # set echo=FALSE to hide code from html output
+```
+
+
+```{r, echo=FALSE}
+
+library("knitr")
+library("cmu202")
+library("kableExtra")
+library("pander")
+library("readr")
+library("magrittr")
+library("car")
+library("jtools")
+library("leaps")
+
+```
+
+```{r, echo=FALSE}
+court <- readr::read_csv("http://stat.cmu.edu/~gordonw/court.csv")
+```
+
+# Introduction
+Losing defendants of civil court cases are often ordered to compensate the plaintiff for damages, often in the form of monetary payment. However, the amount of payment tends to vary greatly, and can be based on a number of factors. One might expect that more severe damages may be corelated with higher payments. In some cases, payment could vary based on settlements made after drawn-out, lengthy trials. Claim types, amounts demanded by the plaintiff, or the number of days that a trial lasts may all influence the amount paid by varying degrees. We use the 2001 Civil Justice Survey of State Courts to predict amount paid to plaintiffs from the three factors mentioned
+
+# Exploratory Data Analysis
+
+**Data**
+
+The data obtained via the survey contains 126 entries and 4 variables, 3 of which can be used as quantitative predictors/estimators during analysis, with one categorical variable. Since we are interested in predicting paid amount, we explore and model the relationship between total amount of damages paid (in dollars) and four variables:
+
+*DEMANDED*: total amount of damages requested from the court by plaintiff (in dollars)
+
+*TRIDAYS*: how many days the trial lasted
+
+*CLAIMTYPE*: type of claim made by plaintiff categorized as:
+    1. motor vehicle
+    2. premises liability
+    3. malpractice
+    4. fraud
+    5. rental/lease
+    6. other
+
+
+
+
+
+
+
+\newpage
+The header of the first few lines of the dataset is as follows:
+```{r, echo=FALSE}
+head(court)
+```
+
+
+**Univariate Exploratory Data Analysis**
+
+We begin by displaying histograms, boxplots and numerical summaries to individually explore the patterns observed for each variable.
+
+```{r, echo=FALSE}
+hist(court$TOTDAM, main='Amount Paid', xlab='Total amount paid to plaintiff (in $)', breaks=10, col='skyblue3')
+```
+
+*Summary*
+
+```{r, echo=FALSE}
+summary(court$TOTDAM)
+```
+
+*Observations*
+
+The distribution of total amount paid is skewed to the right and unimodal with a single peak in the first quartile. There are known outliers towards the right extrema, which warrant some concern.
+
+```{r, echo=FALSE}
+hist(court$DEMANDED, main='Amount Demanded', xlab='Total amount requested by plaintiff (in $)', breaks=10, col='skyblue3')
+```
+
+*Summary*
+
+```{r, echo=FALSE}
+summary(court$TOTDAM)
+```
+
+*Observations*
+
+The distribution of amount demanded is single-peaked and strongly skewed to the right. The vast majority of requests by the plaintiff do not exceed 100,000. In fact, without outliers, the mean is 36,537, so they alone pull the mean by almost 14,000. Transformations will be critical for modeling.
+
+```{r, echo=FALSE}
+hist(court$TRIDAYS, main='Length of Trial', xlab='Number of days trial lasted', breaks=10, col='skyblue3')
+```
+
+*Summary*
+
+```{r, echo=FALSE}
+summary(court$TRIDAYS)
+```
+
+*Observations*
+
+The distribution of trial lengths is single-peaked and skewed to the right with several outliers. While its skewness is more prevalent than that of the amount demanded (the predictor), it does not demonstrate the same severity as the skew seen for amount demanded. Transformations may be necessarry depending on the type of relationship it shows with the predictor.
+
+```{r, echo=FALSE}
+boxplot(TOTDAM ~ CLAIMTYPE, col=(c("skyblue3", "maroon", "gold", "lightgreen", "orange", 'pink')), main="Total Amount by Claim Type", xlab="Type of claim", ylab="Total amount demanded", data=court)
+```
+
+*Observations*
+
+The distributions of total amount demanded vary greatly by category. Trials involving fraud, malpractice, or premises tend to yield greater payouts for damages. On the other hand, trials involving vehicles or other instances seem to yield smaller payments with some exceptions in the form of outliers. 
+
+**Bivariate Exploratory Data Analysis**
+
+Now, we will see and comment on two scatterplots representing the relationships between total amount demanded and its predictors.
+
+```{r, echo=FALSE}
+plot(TOTDAM ~ DEMANDED, main="Total Demanded vs. Total Requested", xlab="Total amount of damages requested from the court by plaintiff (in $)", ylab="Total amount paid (in $)", col='blue', data=court)
+```
+
+*Observations*
+
+The relationship between total demanded and total requested appears nonlinear. There does seem to be positive association between the two variables, although they will need to be explored further and likely transformed before satisfying the linearity requirements of a simple linear or multiple linear regression model.
+
+```{r, echo=FALSE}
+plot(TOTDAM ~ TRIDAYS, main="Total Demanded vs. Length of Trial", xlab="Length of trial (in days)", ylab="Total amount paid (in $)", col='blue', data=court)
+```
+
+*Observations*
+
+There appears to be a weak, positive linear association between amount paid and length of trial. In general, as trials become longer, the amount paid increases.
+
+
+# Modeling
+
+All three quantitative predictors show signs of skew. The skew of amount paid may be acceptable, but the skew seen for both quantitative predictors is sufficiently concerning. Furthermore, the relationships between amount paid and its predictors are either nonlinear, or weakly linear. This may be due to the skew of said predictors, as the predictor with the stronger skew (total requested) shows a less linear form for its scatterplot. First, we will attempt transformations on our predictor variables. We will then need to revaluate our exploratory data analysis with updated values. We can then validate the necessary assumptions of a multiple linear regression model and check for multicollinearity.
+
+**Diagnostics**
+
+We will begin by creating a temporary model involving all quantitative predictors. This model will be used to produce residual diagnostics and a Normal Q-Q plot for analysis.
+
+```{r, echo=FALSE}
+temp.mod <- lm(TOTDAM ~ DEMANDED, TRIDAYS, data=court)
+plot(temp.mod, which=1)
+```
+
+*Observations*
+
+The residuals show clear signs of pattern and are not constantly spread above and below the 0-line. As such, we cannot validate that the errors of the model have mean zero or have constant standard deviation.
+
+```{r, echo=FALSE}
+plot(temp.mod, which=2, col="blue")
+```
+
+*Observations*
+
+The Normal Q-Q plot shows systematic deviations from the line, so we cannot validate the Normality assumption for errors.
+
+**Transformations**
+
+To validate the assumptions for errors, we perform two transformations. Since amount demanded and trial length showed the strongest skew, we will be taking their natural logs and producing updated residual and Normal Q-Q plots along with histograms.
+
+```{r, echo=FALSE}
+court$log.DEMANDED <- log((court$DEMANDED))
+court$log.TRIDAYS <- log((court$TRIDAYS))
+```
+
+```{r, echo=FALSE}
+hist(court$log.DEMANDED, main='Log of Amount Demanded', xlab='Log of total amount requested by plaintiff (in $)', breaks=10, col='skyblue3')
+```
+
+```{r, echo=FALSE}
+hist(court$log.TRIDAYS, main='Log of Length of Trial', xlab='Log of number of days trial lasted', breaks=10, col='skyblue3')
+```
+
+*Observations*
+
+The skewness for both predictors has been significantly reduced. Log of amount demanded shows almost no skew and appears symmetric. While log of trial length still shows some skew, it has been reasonably mitigated.
+
+```{r, echo=FALSE}
+temp.log.mod <- lm(TOTDAM ~ log.DEMANDED + log.TRIDAYS, data=court)
+plot(temp.log.mod, which=1)
+```
+
+*Observations*
+
+The pattern seen for the residual plot of the untransformed data has been reduced. Since residuals are shown to be generally scattered above and below the 0-line with little to no pattern, centered around 0, and constantly spread above and below the 0-line, we can reasonably assume that the errors are independent, have mean 0, and have constant standard deviations.
+
+```{r, echo=FALSE}
+plot(temp.log.mod, which=2, col="blue")
+```
+
+*Observation*
+
+Overall, the standardized residuals of the transformed data deviate from the line far less than those of the untransformed data. Although the standardized residuals begin to deviate for theoretical quantiles greater than 2, we can still assume that the errors are normally distributed.
+
+```{r, echo=FALSE}
+plot(TOTDAM ~ log.DEMANDED, main="Total Demanded vs. Log of Total Requested", xlab="Log of total amount of damages requested from the court by plaintiff (in $)", ylab="Total amount paid (in $)", col='blue', data=court)
+```
+
+```{r, echo=FALSE}
+plot(TOTDAM ~ log.TRIDAYS, main="Total Demanded vs. Log of Length of Trial", xlab="Log of length of trial (in days)", ylab="Total amount paid (in $)", col='blue', data=court)
+```
+
+*Observations*
+
+Since both scatterplots show reasonable a linear association between total paid and its predictors, we can assume the linearity of the relationship.
+
+\newpage
+
+**Relationships Between Quantitative Variables**
+
+```{r, echo=FALSE}
+quant.subset <- court[, c(1, 5, 6)]
+pairs(quant.subset)
+```
+
+```{r, echo=FALSE}
+cor(quant.subset)
+```
+
+*Observations*
+
+Notice that all modeled relationships above show some linear pattern. To test for multicollinearity, we will test for variance inflation factor.
+
+```{r, echo=FALSE}
+car::vif(temp.log.mod)
+```
+
+Since no variables produced a vif greater than 2.5, we proceed without worry of strong multicollinearity.
+
+\newpage
+
+**Summary of Chosen Model**
+
+```{r, echo=FALSE}
+court.mod <- lm(TOTDAM ~ log.DEMANDED + log.TRIDAYS + CLAIMTYPE + CLAIMTYPE:log.DEMANDED + CLAIMTYPE:log.TRIDAYS, data=court)
+summary(court.mod)
+```
+
+*Observations*
+
+All necessary conditions for a multiple regression model were satisfied. For the incorporation of claim type, an interaction model was tested and kept since the majority of the interaction terms are significant. Furthermore, the model itself is significant with a P-value of 1.538e-10. From the multiple R-squared produced by our model, 50.05% of the variation in the total amount paid can be explained by the modeled relationship with the logs of all of its predictors. 
+
+\newpage
+
+# Prediction
+
+With our established model, we can now predict the amount paid to a plaintiff who demands 100,000, has a trial of five days long, and a malpractice claimtype.
+
+Our model with the following values is as follows: (dummy variables equal to zero in this case are not included)
+
+$$totaldemanded = \beta_0 + \beta_1 (log(demanded)) + \beta_2 (log(tridays)) + \beta_3 (claimtypemalpractice) + \beta_8 (log(demanded)*claimtypemalpractice)$$
+$$totaldemanded = -228113 + 30600 (log(demanded)) - 60023 (log(tridays)) - 528088 + 52547 (log(demanded))$$
+$$totaldemanded = -228113 + 30600(log(100000)) - 60023(log(5)) - 528088 + 52547(log(100000))$$
+
+$$totaldemanded = 104460.9$$
+
+We predict that the plaintiff will be paid 104460.9 dollars.
+
+# Discussion
+
+Overall our model has demonstrated that the amount demanded by a plaintiff, the length of a trial, and the type of claim made all influence the final amount paid to the plaintiff by varying degrees. While our model is significant, there is room for improvement. To start, new variables that are more linearly related with the final amount could be introduced or used to replace predictors with weaker linear relationships with the response. There exists much more data for civil court cases that could include location, amount paid to plaintiff's lawyer(s), or demographic makeup of one or more parties. Finally, an Anova model could be used for the categorical variable claim type to help determine its relationship with total paid. 
+
